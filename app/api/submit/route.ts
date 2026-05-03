@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { getSql } from "@/lib/db";
 import { resolveMyState } from "@/lib/states";
 
 export const runtime = "edge";
@@ -13,8 +13,6 @@ interface SubmitBody {
   gps?: { lat: number; lng: number; accuracy?: number } | null;
 }
 
-// Reverse-geocode lat/lng → { country, state, city } using BigDataCloud's
-// free, key-less endpoint. Works server-side; ~250ms typical.
 async function reverseGeocodeGps(lat: number, lng: number) {
   try {
     const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
@@ -23,7 +21,7 @@ async function reverseGeocodeGps(lat: number, lng: number) {
     const j = (await res.json()) as {
       countryCode?: string;
       principalSubdivision?: string;
-      principalSubdivisionCode?: string; // e.g. "MY-10"
+      principalSubdivisionCode?: string;
       city?: string;
       locality?: string;
     };
@@ -85,7 +83,6 @@ export async function POST(req: NextRequest) {
     if (geo) {
       source = "gps";
       country = geo.country ?? country;
-      // Prefer GPS-derived state; fall back to MY-state mapping if code looks like ours
       state =
         geo.state ??
         (geo.country === "MY" ? resolveMyState(geo.stateCode) : null);
@@ -94,33 +91,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const sb = getSupabase();
-  if (!sb) {
+  const sql = getSql();
+  if (!sql) {
     return NextResponse.json(
       { ok: false, error: "db_not_configured" },
       { status: 500 },
     );
   }
 
-  const { error } = await sb.from("submissions").insert({
-    source,
-    ip,
-    country,
-    state,
-    state_code: stateCode,
-    city,
-    lat,
-    lng,
-    lang: body.lang ?? "en",
-    answers: body.answers,
-    winner: body.winner,
-    percent: body.percent,
-    submission_id: body.submissionId ?? null,
-    ua,
-  });
-
-  if (error) {
-    console.error("supabase insert error:", error);
+  try {
+    await sql`
+      insert into submissions
+        (source, ip, country, state, state_code, city, lat, lng, lang,
+         answers, winner, percent, submission_id, ua)
+      values
+        (${source}, ${ip}, ${country}, ${state}, ${stateCode}, ${city},
+         ${lat}, ${lng}, ${body.lang ?? "en"},
+         ${JSON.stringify(body.answers)}::jsonb,
+         ${body.winner},
+         ${JSON.stringify(body.percent)}::jsonb,
+         ${body.submissionId ?? null}, ${ua})
+    `;
+  } catch (e) {
+    console.error("neon insert error:", e);
     return NextResponse.json(
       { ok: false, error: "store_failed" },
       { status: 500 },
