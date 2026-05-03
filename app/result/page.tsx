@@ -9,6 +9,7 @@ import LangToggle from "@/components/LangToggle";
 import ResultCard from "@/components/ResultCard";
 import ShareButtons from "@/components/ShareButtons";
 import PixelButton from "@/components/PixelButton";
+import { getStoredGps, requestGpsOnce, getGpsDecision } from "@/lib/geo";
 
 export default function ResultPage() {
   const { t, lang } = useI18n();
@@ -29,7 +30,8 @@ export default function ResultPage() {
     return score(ans);
   }, [hash]);
 
-  // Try GPS first; fall back to IP-based geolocation server-side. Submit once.
+  // GPS was captured at the start of the session (landing page). Reuse it.
+  // If the user landed straight on /result (e.g. shared link), we'll ask now.
   useEffect(() => {
     if (!result || !hash) return;
     const dedupeKey = `ge16.submitted:${hash}`;
@@ -59,20 +61,20 @@ export default function ResultPage() {
       });
     };
 
-    if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          send({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          }),
-        () => send(null), // denied / error → IP fallback
-        { timeout: 6000, maximumAge: 60000, enableHighAccuracy: false },
-      );
-    } else {
-      send(null);
+    const stored = getStoredGps();
+    if (stored) {
+      send({ lat: stored.lat, lng: stored.lng, accuracy: stored.accuracy });
+      return;
     }
+
+    // No stored GPS — either user denied at start, or landed here directly.
+    if (getGpsDecision() === "denied") {
+      send(null);
+      return;
+    }
+    requestGpsOnce().then((gps) =>
+      send(gps ? { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy } : null),
+    );
   }, [result, hash, lang]);
 
   return (

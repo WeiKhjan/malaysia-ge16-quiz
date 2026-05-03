@@ -79,14 +79,16 @@ export async function POST(req: NextRequest) {
   ) {
     lat = body.gps.lat;
     lng = body.gps.lng;
+    // Valid coordinates were granted by the user — that alone makes this 'gps'.
+    // Reverse geocoding only enriches state/city; failure shouldn't downgrade source.
+    source = "gps";
     const geo = await reverseGeocodeGps(lat, lng);
     if (geo) {
-      source = "gps";
       country = geo.country ?? country;
       state =
         geo.state ??
-        (geo.country === "MY" ? resolveMyState(geo.stateCode) : null);
-      stateCode = geo.stateCode ?? null;
+        (geo.country === "MY" ? resolveMyState(geo.stateCode) : state);
+      stateCode = geo.stateCode ?? stateCode;
       city = geo.city ?? city;
     }
   }

@@ -1,14 +1,28 @@
 "use client";
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useI18n } from "@/lib/i18n";
 import LangToggle from "@/components/LangToggle";
 import PixelButton from "@/components/PixelButton";
 import PixelAvatar from "@/components/PixelAvatar";
 import { PARTY_IDS } from "@/lib/parties";
+import { requestGpsOnce } from "@/lib/geo";
 
 export default function Home() {
   const { t } = useI18n();
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+
+  async function handleStart() {
+    if (asking) return;
+    setAsking(true);
+    try {
+      await requestGpsOnce(); // resolves whether allowed, denied, or timed out
+    } finally {
+      router.push("/quiz");
+    }
+  }
 
   return (
     <main className="min-h-screen px-4 py-6 flex flex-col">
@@ -53,11 +67,9 @@ export default function Home() {
           ))}
         </div>
 
-        <Link href="/quiz">
-          <PixelButton size="lg" variant="primary">
-            ▶ {t("app.start")}
-          </PixelButton>
-        </Link>
+        <PixelButton size="lg" variant="primary" onClick={handleStart} disabled={asking}>
+          ▶ {asking ? "…" : t("app.start")}
+        </PixelButton>
 
         <p className="font-mono text-base text-muted max-w-md">
           {t("app.disclaimer")}
