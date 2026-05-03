@@ -62,6 +62,9 @@ export default function Home() {
         <p className="font-mono text-base text-muted max-w-md">
           {t("app.disclaimer")}
         </p>
+        <p className="font-mono text-xs text-muted max-w-md opacity-70">
+          {t("app.privacy")}
+        </p>
       </section>
 
       <footer className="font-mono text-sm text-muted text-center py-4 max-w-3xl mx-auto">

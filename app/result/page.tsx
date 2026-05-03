@@ -11,7 +11,7 @@ import ShareButtons from "@/components/ShareButtons";
 import PixelButton from "@/components/PixelButton";
 
 export default function ResultPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [hash, setHash] = useState<string>("");
   const cardRef = useRef<HTMLDivElement | null>(null);
 
@@ -28,6 +28,52 @@ export default function ResultPage() {
     if (ans.length !== QUESTIONS.length) return null;
     return score(ans);
   }, [hash]);
+
+  // Try GPS first; fall back to IP-based geolocation server-side. Submit once.
+  useEffect(() => {
+    if (!result || !hash) return;
+    const dedupeKey = `ge16.submitted:${hash}`;
+    if (sessionStorage.getItem(dedupeKey)) return;
+    sessionStorage.setItem(dedupeKey, "1");
+
+    const submissionId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const send = (gps: { lat: number; lng: number; accuracy?: number } | null) => {
+      fetch("/api/submit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          answers: decodeAnswers(hash),
+          winner: result.winner,
+          percent: result.percent,
+          lang,
+          submissionId,
+          gps,
+        }),
+        keepalive: true,
+      }).catch(() => {
+        sessionStorage.removeItem(dedupeKey);
+      });
+    };
+
+    if (typeof navigator !== "undefined" && "geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          send({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          }),
+        () => send(null), // denied / error → IP fallback
+        { timeout: 6000, maximumAge: 60000, enableHighAccuracy: false },
+      );
+    } else {
+      send(null);
+    }
+  }, [result, hash, lang]);
 
   return (
     <main className="min-h-screen px-4 py-6 flex flex-col">
@@ -71,6 +117,9 @@ export default function ResultPage() {
 
             <p className="font-mono text-sm text-muted text-center max-w-md mt-4">
               {t("app.disclaimer")}
+            </p>
+            <p className="font-mono text-xs text-muted text-center max-w-md opacity-80">
+              {t("app.privacy")}
             </p>
           </>
         )}
